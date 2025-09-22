@@ -756,6 +756,57 @@ def search():
     
     return jsonify(resp)
 
+@app.route("/machine/<machine_name>")
+def machine_detail(machine_name):
+    """Página individual da máquina"""
+    return render_template('machine_detail.html', machine_name=machine_name)
+
+@app.route("/api/machine/<machine_name>")
+def machine_api(machine_name):
+    """API para dados individuais da máquina"""
+    machine = status_cache.get(machine_name)
+    if not machine:
+        return jsonify({"error": "Máquina não encontrada"}), 404
+    
+    return jsonify({
+        "name": machine["name"],
+        "ip": machine["ip"],
+        "status": machine["status"],
+        "time_last_checked": formatar_data_br(machine["last_checked"]) if machine["last_checked"] else None,
+        "latency_ms": machine["latency_ms"],
+        "reason": machine.get("reason"),
+        "method": machine.get("method")
+    })
+
+@app.route("/api/machine/<machine_name>/history")
+def machine_history_api(machine_name):
+    """API para histórico da máquina"""
+    try:
+        session = SessionLocal()
+        limit = request.args.get('limit', 50, type=int)
+        
+        history = session.query(HostHistory)\
+                         .filter(HostHistory.name == machine_name)\
+                         .order_by(HostHistory.timestamp.desc())\
+                         .limit(limit)\
+                         .all()
+        
+        session.close()
+        
+        results = []
+        for h in history:
+            results.append({
+                "status": h.status,
+                "time": formatar_data_br(h.timestamp),
+                "latency_ms": h.latency_ms,
+                "ip": h.ip
+            })
+        
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"Erro ao buscar histórico da máquina {machine_name}: {e}")
+        return jsonify([])
+
 # ----------------- Inicialização -----------------
 
 def inicializar_cache():
