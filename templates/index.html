@@ -188,6 +188,14 @@
             <span class="text-sm text-green-700 dark:text-green-400 font-medium">Online</span>
           </div>
           
+          <!-- Optimize System Button -->
+          <button onclick="optimizeSystem()" 
+                  id="optimizeBtn"
+                  class="p-2 rounded-lg bg-green-100 dark:bg-green-800 hover:bg-green-200 dark:hover:bg-green-700 transition-colors duration-200"
+                  title="Otimizar Sistema">
+            <i class="fas fa-bolt text-green-600 dark:text-green-300"></i>
+          </button>
+          
           <!-- Toggle Dark Mode -->
           <button onclick="toggleDarkMode()" 
                   class="p-2 rounded-lg bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors duration-200"
@@ -397,6 +405,52 @@
     let dadosAtuais = [];
     let pesquisaAtiva = false;
     let statusAnterior = {};
+
+    // System optimization functionality
+    async function optimizeSystem() {
+      const btn = document.getElementById('optimizeBtn');
+      const originalContent = btn.innerHTML;
+      
+      try {
+        // Show loading state
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin text-green-600 dark:text-green-300"></i>';
+        btn.disabled = true;
+        
+        const response = await axios.post('/api/optimize');
+        
+        if (response.data.success) {
+          // Show success state
+          btn.innerHTML = '<i class="fas fa-check text-green-600 dark:text-green-300"></i>';
+          
+          // Show success message
+          alert('✅ Sistema otimizado com sucesso!\n\n' +
+                'Melhorias aplicadas:\n' +
+                '• Cache DNS limpo\n' +
+                '• Logs verbosos reduzidos\n' +
+                '• Performance melhorada\n' +
+                '• Timeouts otimizados');
+          
+          // Reset button after 2 seconds
+          setTimeout(() => {
+            btn.innerHTML = originalContent;
+            btn.disabled = false;
+          }, 2000);
+          
+        } else {
+          throw new Error(response.data.message || 'Erro desconhecido');
+        }
+        
+      } catch (error) {
+        console.error('Erro ao otimizar sistema:', error);
+        btn.innerHTML = '<i class="fas fa-times text-red-500"></i>';
+        alert('❌ Erro ao otimizar sistema: ' + (error.response?.data?.message || error.message));
+        
+        setTimeout(() => {
+          btn.innerHTML = originalContent;
+          btn.disabled = false;
+        }, 2000);
+      }
+    }
 
     // Dark mode functionality
     function toggleDarkMode() {

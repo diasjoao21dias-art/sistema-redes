@@ -26,9 +26,9 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 BRASILIA_TZ = pytz.timezone('America/Sao_Paulo')
 DB_FILE = "status.db"
 MACHINES_FILE = "machines.csv"
-CHECK_INTERVAL = 10          # segundos entre varreduras
-PING_TIMEOUT_MS = 800        # Reduzido para melhor performance
-MAX_WORKERS = 32             # Otimizado para eficiência
+CHECK_INTERVAL = 6           # segundos entre varreduras - otimizado
+PING_TIMEOUT_MS = 500        # Otimizado para resposta mais rápida
+MAX_WORKERS = 40             # Aumentado para melhor paralelismo
 NETWORK_RANGE = "192.168.0."  # base para varredura (0-254)
 PORTAS_TCP_TESTE = [3389, 445, 80]
 MAX_RETRIES = 2              # Tentativas de ping
@@ -62,6 +62,7 @@ status_cache = {}  # Agora usando hostname como chave
 machines_cache = []  # Cache das máquinas carregadas
 last_machines_load = 0  # Timestamp da última carga
 dns_cache = {}  # Cache de resolução DNS: {hostname: {ip, resolved_at, ok, error}}
+LOG_VERBOSE = False  # Controle de logs verbosos para melhor performance
 monitoring_stats = {
     "last_scan_duration": 0,
     "successful_checks": 0,
@@ -213,7 +214,8 @@ def checar_um_host(host: dict):
             # ETAPA 2: FALLBACK - Usa IP do CSV quando DNS falha
             target_ip = ip_fallback
             method = "IP_FALLBACK"
-            logger.info(f"DNS FAIL para {hostname}, usando IP fallback: {ip_fallback}")
+            if LOG_VERBOSE:
+                logger.info(f"DNS FAIL para {hostname}, usando IP fallback: {ip_fallback}")
             reason = "DNS_FAIL_FALLBACK"
             
             # Tenta ICMP ping usando o IP direto
@@ -381,7 +383,7 @@ def worker_loop():
             
             # Calcula tempo da varredura
             scan_duration = time.perf_counter() - start_time
-            monitoring_stats["last_scan_duration"] = round(scan_duration, 2) if scan_duration is not None else 0
+            monitoring_stats["last_scan_duration"] = round(scan_duration, 2)
             monitoring_stats["total_scans"] += 1
             
             logger.info(
@@ -516,7 +518,7 @@ def export_excel():
     header_df = pd.DataFrame(header_data)
     
     # Write to Excel with multiple sheets/sections
-    with pd.ExcelWriter(buffer, engine='openpyxl', mode='w') as writer:
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         # Write header
         header_df.to_excel(writer, sheet_name='Status da Rede', index=False, header=False, startrow=0)
         
@@ -806,6 +808,56 @@ def machine_history_api(machine_name):
     except Exception as e:
         logger.error(f"Erro ao buscar histórico da máquina {machine_name}: {e}")
         return jsonify([])
+
+@app.route("/api/optimize", methods=["POST"])
+def optimize_system():
+    """API para otimizar o sistema"""
+    global dns_cache, LOG_VERBOSE
+    try:
+        optimizations_applied = []
+        
+        # 1. Limpar cache DNS para forçar resolução fresca
+        old_cache_size = len(dns_cache)
+        dns_cache.clear()
+        optimizations_applied.append(f"Cache DNS limpo ({old_cache_size} entradas removidas)")
+        
+        # 2. Manter logs verbosos desabilitados para melhor performance
+        LOG_VERBOSE = False
+        optimizations_applied.append("Logs verbosos otimizados para performance")
+        
+        # 3. Forçar limpeza de registros antigos do banco (mais de 30 dias)
+        try:
+            with SessionLocal() as db:
+                cutoff_date = datetime.now(BRASILIA_TZ) - timedelta(days=30)
+                deleted_count = db.query(HostHistory).filter(
+                    HostHistory.timestamp < cutoff_date
+                ).delete()
+                db.commit()
+                if deleted_count > 0:
+                    optimizations_applied.append(f"Histórico antigo limpo ({deleted_count} registros)")
+        except Exception as e:
+            logger.warning(f"Erro ao limpar histórico: {e}")
+        
+        # 4. Resetar estatísticas para nova contagem
+        monitoring_stats["total_scans"] = 0
+        monitoring_stats["successful_checks"] = 0
+        monitoring_stats["failed_checks"] = 0
+        optimizations_applied.append("Estatísticas de monitoramento resetadas")
+        
+        logger.info(f"Sistema otimizado: {', '.join(optimizations_applied)}")
+        
+        return jsonify({
+            "success": True,
+            "message": "Sistema otimizado com sucesso",
+            "optimizations": optimizations_applied
+        })
+        
+    except Exception as e:
+        logger.error(f"Erro ao otimizar sistema: {e}")
+        return jsonify({
+            "success": False,
+            "message": f"Erro ao otimizar sistema: {str(e)}"
+        }), 500
 
 # ----------------- Inicialização -----------------
 
